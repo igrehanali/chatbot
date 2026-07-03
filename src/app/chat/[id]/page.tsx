@@ -147,6 +147,7 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -162,6 +163,12 @@ export default function ChatPage() {
       block: "end",
     });
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      textareaRef.current?.focus();
+    }
+  }, [isLoading]);
 
   const handleClearChat = () => {
     abortControllerRef.current?.abort();
@@ -269,7 +276,6 @@ export default function ChatPage() {
         abortControllerRef.current = null;
       }
       setIsLoading(false);
-      formRef.current?.querySelector("textarea")?.focus();
     }
   };
 
@@ -394,6 +400,7 @@ export default function ChatPage() {
         >
           <div className="flex items-center gap-2">
             <Textarea
+              ref={textareaRef}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
