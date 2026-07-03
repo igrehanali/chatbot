@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowLeft, Check, Copy, SendHorizonal, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Copy, RefreshCcw, SendHorizonal, Square, Trash2 } from "lucide-react";
 import { useChatbotsContext } from "@/components/providers/chatbots-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -133,7 +133,13 @@ export default function ChatPage() {
   const params = useParams<{ id: string }>();
   const botId = params.id;
 
-  const { getBotById, getHistoryByBotId, appendMessage, replaceHistory } = useChatbotsContext();
+  const {
+    getBotById,
+    getHistoryByBotId,
+    appendMessage,
+    updateMessageContent,
+    replaceHistory,
+  } = useChatbotsContext();
   const bot = getBotById(botId);
   const messages = useMemo(() => getHistoryByBotId(botId), [botId, getHistoryByBotId]);
 
@@ -142,6 +148,13 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({
@@ -151,8 +164,13 @@ export default function ChatPage() {
   }, [messages, isLoading]);
 
   const handleClearChat = () => {
+    abortControllerRef.current?.abort();
     replaceHistory(botId, []);
     setError(null);
+  };
+
+  const handleStop = () => {
+    abortControllerRef.current?.abort();
   };
 
   if (!bot) {
@@ -171,28 +189,17 @@ export default function ChatPage() {
     );
   }
 
-  const handleSend = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const userText = input.trim();
-    if (!userText || isLoading) return;
-
+  const requestAssistantResponse = async (
+    outgoingMessages: { role: string; content: string }[]
+  ) => {
     setError(null);
-
-    const userMessage: ChatMessage = {
-      id: createMessageId(),
-      role: "user",
-      content: userText,
-      createdAt: new Date().toISOString(),
-    };
-
-    const outgoingMessages = [
-      ...messages,
-      userMessage,
-    ].map(({ role, content }) => ({ role, content }));
-
-    appendMessage(botId, userMessage);
-    setInput("");
     setIsLoading(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    let assistantId: string | null = null;
+    let accumulated = "";
 
     try {
       const response = await fetch("/api/chat", {
@@ -204,32 +211,97 @@ export default function ChatPage() {
           systemContext: bot.systemContext,
           messages: outgoingMessages,
         }),
+        signal: controller.signal,
       });
 
-      const payload = await response.json();
-
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Failed to fetch assistant response.");
+        let message = "Failed to fetch assistant response.";
+        try {
+          const payload = await response.json();
+          message = payload?.error ?? message;
+        } catch {
+          // Keep the default message when the error body is not JSON.
+        }
+        throw new Error(message);
       }
 
-      const assistantMessage: ChatMessage = {
-        id: createMessageId(),
-        role: "assistant",
-        content: payload.message,
-        createdAt: new Date().toISOString(),
-      };
+      if (!response.body) {
+        throw new Error("No assistant response returned by provider.");
+      }
 
-      appendMessage(botId, assistantMessage);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        accumulated += decoder.decode(value, { stream: true });
+
+        if (!assistantId) {
+          assistantId = createMessageId();
+          appendMessage(botId, {
+            id: assistantId,
+            role: "assistant",
+            content: accumulated,
+            createdAt: new Date().toISOString(),
+          });
+        } else {
+          updateMessageContent(botId, assistantId, accumulated);
+        }
+      }
+
+      if (!assistantId) {
+        throw new Error("No assistant response returned by provider.");
+      }
     } catch (fetchError) {
-      setError(
-        fetchError instanceof Error
-          ? fetchError.message
-          : "Something went wrong while contacting OpenRouter."
-      );
+      if (fetchError instanceof Error && fetchError.name === "AbortError") {
+        // Keep whatever partial content was streamed before the stop.
+      } else {
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : "Something went wrong while contacting OpenRouter."
+        );
+      }
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setIsLoading(false);
-      formRef.current?.querySelector("input")?.focus();
+      formRef.current?.querySelector("textarea")?.focus();
     }
+  };
+
+  const handleSend = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const userText = input.trim();
+    if (!userText || isLoading) return;
+
+    const userMessage: ChatMessage = {
+      id: createMessageId(),
+      role: "user",
+      content: userText,
+      createdAt: new Date().toISOString(),
+    };
+
+    const outgoingMessages = [...messages, userMessage].map(
+      ({ role, content }) => ({ role, content })
+    );
+
+    appendMessage(botId, userMessage);
+    setInput("");
+
+    await requestAssistantResponse(outgoingMessages);
+  };
+
+  const handleRetry = async () => {
+    if (isLoading || messages.length === 0) return;
+    const outgoingMessages = messages.map(({ role, content }) => ({
+      role,
+      content,
+    }));
+    await requestAssistantResponse(outgoingMessages);
   };
 
   return (
@@ -303,7 +375,7 @@ export default function ChatPage() {
               </div>
             ))}
 
-            {isLoading && (
+            {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
               <div className="flex justify-start">
                 <div className="rounded-2xl bg-secondary px-4 py-3 text-sm text-secondary-foreground">
                   {bot.name} is typing...
@@ -334,12 +406,38 @@ export default function ChatPage() {
               disabled={isLoading}
               className="min-h-10 max-h-40 resize-none"
             />
-            <Button type="submit" size="icon" disabled={!input.trim() || isLoading}>
-              <SendHorizonal className="h-4 w-4" />
-              <span className="sr-only">Send</span>
-            </Button>
+            {isLoading ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                onClick={handleStop}
+                aria-label="Stop generating"
+              >
+                <Square className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button type="submit" size="icon" disabled={!input.trim()}>
+                <SendHorizonal className="h-4 w-4" />
+                <span className="sr-only">Send</span>
+              </Button>
+            )}
           </div>
-          {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+          {error && (
+            <div className="mt-2 flex items-center gap-2">
+              <p className="text-xs text-destructive">{error}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={handleRetry}
+              >
+                <RefreshCcw className="h-3 w-3" />
+                Retry
+              </Button>
+            </div>
+          )}
         </form>
       </section>
     </main>

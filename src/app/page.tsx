@@ -7,7 +7,7 @@ import { useChatbotsContext } from "@/components/providers/chatbots-provider";
 
 export default function HomePage() {
   const router = useRouter();
-  const { chatbots, createBot, updateBot, getHistoryByBotId } = useChatbotsContext();
+  const { chatbots, createBot, updateBot, deleteBot, getHistoryByBotId } = useChatbotsContext();
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-10">
@@ -52,6 +52,7 @@ export default function HomePage() {
                 onEditBot={(botId, input) => {
                   updateBot(botId, input);
                 }}
+                onDeleteBot={deleteBot}
               />
             ))}
           </div>
