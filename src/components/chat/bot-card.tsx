@@ -1,5 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { CreateBotDialog } from "@/components/chat/create-bot-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -15,9 +17,10 @@ interface BotCardProps {
     systemContext: string;
     avatarUrl?: string;
   }) => void;
+  onDeleteBot: (botId: string) => void;
 }
 
-export function BotCard({ bot, messageCount, onEditBot }: BotCardProps) {
+export function BotCard({ bot, messageCount, onEditBot, onDeleteBot }: BotCardProps) {
   return (
     <Card className="animate-fade-up border-white/40 bg-card/90 backdrop-blur-sm">
       <CardHeader className="gap-3">
@@ -56,6 +59,21 @@ export function BotCard({ bot, messageCount, onEditBot }: BotCardProps) {
             </Button>
           }
         />
+
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label={`Delete ${bot.name}`}
+          className="text-destructive hover:text-destructive"
+          onClick={() => {
+            if (window.confirm(`Delete "${bot.name}" and its chat history?`)) {
+              onDeleteBot(bot.id);
+            }
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </CardFooter>
     </Card>
   );

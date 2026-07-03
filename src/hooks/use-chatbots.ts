@@ -83,6 +83,15 @@ export function useChatbots() {
     );
   };
 
+  const deleteBot = (botId: string) => {
+    setChatbots((prev) => prev.filter((bot) => bot.id !== botId));
+    setHistories((prev) => {
+      const next = { ...prev };
+      delete next[botId];
+      return next;
+    });
+  };
+
   const getBotById = (botId: string) => chatbots.find((bot) => bot.id === botId);
 
   const getHistoryByBotId = (botId: string) => histories[botId] ?? [];
@@ -91,6 +100,19 @@ export function useChatbots() {
     setHistories((prev) => ({
       ...prev,
       [botId]: [...(prev[botId] ?? []), message],
+    }));
+  };
+
+  const updateMessageContent = (
+    botId: string,
+    messageId: string,
+    content: string
+  ) => {
+    setHistories((prev) => ({
+      ...prev,
+      [botId]: (prev[botId] ?? []).map((message) =>
+        message.id === messageId ? { ...message, content } : message
+      ),
     }));
   };
 
@@ -105,9 +127,11 @@ export function useChatbots() {
     chatbots: sortedChatbots,
     createBot,
     updateBot,
+    deleteBot,
     getBotById,
     getHistoryByBotId,
     appendMessage,
+    updateMessageContent,
     replaceHistory,
   };
 }

@@ -8,6 +8,15 @@ interface ChatRequestBody {
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
+function extractDeltaText(data: string): string {
+  try {
+    const parsed = JSON.parse(data);
+    return parsed?.choices?.[0]?.delta?.content ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -49,6 +58,7 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         model,
+        stream: true,
         messages: [
           {
             role: "system",
@@ -57,28 +67,82 @@ export async function POST(request: Request) {
           ...incomingMessages,
         ],
       }),
+      signal: request.signal,
     });
 
-    const payload = await response.json();
-
     if (!response.ok) {
-      return NextResponse.json(
-        { error: payload?.error?.message ?? "OpenRouter request failed." },
-        { status: response.status }
-      );
+      let message = "OpenRouter request failed.";
+      try {
+        const payload = await response.json();
+        message = payload?.error?.message ?? message;
+      } catch {
+        // Keep the default message when the error body is not JSON.
+      }
+      return NextResponse.json({ error: message }, { status: response.status });
     }
 
-    const assistantMessage = payload?.choices?.[0]?.message?.content;
-
-    if (!assistantMessage) {
+    if (!response.body) {
       return NextResponse.json(
         { error: "No assistant response returned by provider." },
         { status: 502 }
       );
     }
 
-    return NextResponse.json({ message: assistantMessage });
-  } catch {
+    const upstream = response.body;
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const reader = upstream.getReader();
+        let buffer = "";
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            let newlineIndex = buffer.indexOf("\n");
+            while (newlineIndex !== -1) {
+              const line = buffer.slice(0, newlineIndex).trim();
+              buffer = buffer.slice(newlineIndex + 1);
+              newlineIndex = buffer.indexOf("\n");
+
+              if (!line.startsWith("data: ")) continue;
+
+              const data = line.slice(6);
+              if (data === "[DONE]") continue;
+
+              const text = extractDeltaText(data);
+              if (text) {
+                controller.enqueue(encoder.encode(text));
+              }
+            }
+          }
+          controller.close();
+        } catch (streamError) {
+          controller.error(streamError);
+        } finally {
+          reader.releaseLock();
+        }
+      },
+      cancel() {
+        upstream.cancel().catch(() => {});
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return new Response(null, { status: 499 });
+    }
     return NextResponse.json(
       { error: "Unable to process chat request." },
       { status: 500 }
