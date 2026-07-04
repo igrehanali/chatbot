@@ -7,7 +7,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowLeft, Check, Copy, SendHorizonal, Trash2 } from "lucide-react";
 import { useChatbotsContext } from "@/components/providers/chatbots-provider";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -233,41 +232,29 @@ export default function ChatPage() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-3 py-4 sm:px-6 sm:py-6">
-      <header className="animate-fade-up mb-3 flex items-center justify-between gap-3 rounded-2xl border bg-card/90 p-3 backdrop-blur-sm sm:mb-4 sm:p-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <Avatar>
-            {bot.avatarUrl ? <AvatarImage src={bot.avatarUrl} alt={`${bot.name} avatar`} /> : null}
-            <AvatarFallback className="font-display font-semibold">{bot.avatar}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold sm:text-lg">{bot.name}</h1>
-            <p className="truncate text-xs text-muted-foreground sm:text-sm">{bot.description}</p>
-          </div>
-        </div>
+    <main className="flex min-h-screen w-full flex-col">
+      <header className="flex items-center justify-between border-b bg-card/90 px-2 py-2 backdrop-blur-sm sm:px-3">
+        <Button asChild variant="outline" size="sm">
+          <Link href="/" className="inline-flex items-center gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            Home
+          </Link>
+        </Button>
 
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={handleClearChat}
-            aria-label="Clear chat"
-            title="Clear chat"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/" className="inline-flex items-center gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Home
-            </Link>
-          </Button>
-        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={handleClearChat}
+          aria-label="Clear chat"
+          title="Clear chat"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </header>
 
-      <section className="flex flex-1 flex-col rounded-2xl border bg-card/90 backdrop-blur-sm">
-        <ScrollArea className="h-[calc(100vh-14rem)] p-3 sm:h-[calc(100vh-15rem)] sm:p-5">
+      <section className="flex flex-1 flex-col bg-card/90 backdrop-blur-sm">
+        <ScrollArea className="flex-1 p-3 sm:p-5">
           <div className="space-y-3">
             {messages.length === 0 && !isLoading && (
               <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
